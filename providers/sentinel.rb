@@ -44,7 +44,6 @@ def configure
 
     recipe_eval do
       sentinel_name = current['name'] || current['port']
-      sentinel_name = "sentinel_#{sentinel_name}"
       piddir = "#{base_piddir}/#{sentinel_name}"
 
       #Create the owner of the redis data directory
@@ -71,31 +70,31 @@ def configure
         recursive true
         action :create
       end
-     
-    unless current['logfile'].nil?
-      #Create the log directory if syslog is not being used
-      directory ::File.dirname(current['logfile']) do
-        owner current['user']
-        group current['group']
-        mode '0755'
-        recursive true
-        action :create
-        only_if { current['syslogenabled'] != 'yes' && current['logfile'] && current['logfile'] != 'stdout' }
+
+      unless current['logfile'].nil?
+        #Create the log directory if syslog is not being used
+        directory ::File.dirname(current['logfile']) do
+          owner current['user']
+          group current['group']
+          mode '0755'
+          recursive true
+          action :create
+          only_if { current['syslogenabled'] != 'yes' && current['logfile'] && current['logfile'] != 'stdout' }
+        end
+
+        # Create the log file is syslog is not being used
+        file current['logfile'] do
+          owner current['user']
+          group current['group']
+          mode '0644'
+          backup false
+          action :touch
+          only_if { current['logfile'] && current['logfile'] != 'stdout' }
+        end
       end
-    
-     #Create the log file is syslog is not being used
-      file current['logfile'] do
-        owner current['user']
-        group current['group']
-        mode '0644'
-        backup false
-        action :touch
-        only_if { current['logfile'] && current['logfile'] != 'stdout' }
-      end
-    end
 
       #Lay down the configuration files for the current instance
-      template "#{current['configdir']}/#{sentinel_name}.conf" do
+      template "#{current['configdir']}/sentinel_#{sentinel_name}.conf" do
         source 'sentinel.conf.erb'
         cookbook 'redisio'
         owner current['user']
@@ -121,43 +120,25 @@ def configure
           :quorum_count           => current['quorum_count']
         })
       end
+
       #Setup init.d file
       bin_path = node['redisio']['bin_path']
       bin_path = ::File.join(node['redisio']['install_dir'], 'bin') if node['redisio']['install_dir']
-      template "/etc/init.d/redis_#{sentinel_name}" do
+      template "/etc/init.d/redis_sentinel_#{sentinel_name}" do
         source 'sentinel.init.erb'
         cookbook 'redisio'
         owner 'root'
         group 'root'
         mode '0755'
         variables({
-          :name => sentinel_name,
+          :name => "sentinel_#{sentinel_name}",
           :bin_path => bin_path,
           :uob_control => node['redisio']['job_control'],
           :user => current['user'],
           :configdir => current['configdir'],
           :piddir => piddir,
           :platform => node['platform'],
-          })
-        only_if { node['redisio']['job_control'] == 'initd' }
-      end
-      template "/etc/init/redis_#{sentinel_name}.conf" do
-        source 'sentinel.upstart.conf.erb'
-        cookbook 'redisio'
-        owner current['user']
-        group current['group']
-        mode '0644'
-        variables({
-          :name => sentinel_name,
-          :bin_path => bin_path,
-          :job_control => node['redisio']['job_control'],
-          :user => current['user'],
-          :group => current['group'],
-          :configdir => current['configdir'],
-          :piddir => piddir,
-          :platform => node['platform'],
-          })
-        only_if { node['redisio']['job_control'] == 'upstart' }
+        })
       end
     end
   end # servers each loop
